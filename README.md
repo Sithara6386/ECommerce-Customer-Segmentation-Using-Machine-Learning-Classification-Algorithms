@@ -3,7 +3,7 @@ Problem Statement: The objective of this project is to develop a machine-learnin
 
 Dataset Description 
 
-# Dataset name and source (Kaggle / UCI link):	E-Commerce Sales Analytics Dataset
+Dataset name and source (Kaggle / UCI link):	E-Commerce Sales Analytics Dataset
 https://www.kaggle.com/datasets/datascikhan/e-commerce-sales-and-customer-analytics
 Type of problem (binary / multi-class):	Multi Class 
 Number of instances (minimum 500):	130,000+
