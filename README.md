@@ -1,0 +1,2 @@
+# ECommerce-Customer-Segmentation-Using-Machine-Learning-Classification-Algorithms
+The objective of this project is to develop a machine-learning classification solution that predicts an e-commerce customer's segment from their purchasing behavior and transaction history. This is a multiclass classification problem. Five machine-learning algorithms are trained and evaluated using a common set of classification metrics. 
