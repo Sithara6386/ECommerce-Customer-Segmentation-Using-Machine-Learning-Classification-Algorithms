@@ -52,12 +52,11 @@ https://github.com/Sithara6386/ECommerce-Customer-Segmentation-Using-Machine-Lea
 Models used: Model Comparison Table
 
 	ML Model Name	Accuracy	AUC	Precision	Recall	F1 Weighted	MCC
-1	Support Vector Machine	0.6623	0.8083	0.5831	0.6623	0.6189	0.4213
+1   Support Vector Machine	0.6623	0.8083	0.5831	0.6623	0.6189	0.4213
 2	Decision Tree	0.6129	0.7079	0.5785	0.6129	0.5927	0.3434
 3	Logistic Regression	0.4529	0.8085	0.5979	0.4529	0.4936	0.2596
 4	Gaussian Naive Bayes	0.4337	0.6551	0.5034	0.4337	0.4586	0.1643
 5	KNN	0.5410	0.6344	0.4748	0.5410	0.4953	0.1734
-
 
 Add your observations on the performance of each model on the chosen dataset: ML Model Name	Observation about model performance
 
