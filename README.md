@@ -9,28 +9,30 @@ b) Dataset Description:
 1) Dataset name and source (Kaggle / UCI link):-	E-Commerce Sales Analytics Dataset
 https://www.kaggle.com/datasets/datascikhan/e-commerce-sales-and-customer-analytics
 
-2) Type of problem (binary / multi-class):-	Multi Class 
+    Data set is uploaded here as two sections. 
 
-3) Number of instances (minimum 500):-	130,000+
+3) Type of problem (binary / multi-class):-	Multi Class 
 
-4) Number of features (minimum 12):-	46
+4) Number of instances (minimum 500):-	130,000+
 
-5) Target variable and its classes	Target Variable:- Customer Segment 
+5) Number of features (minimum 12):-	46
 
-6) Classes:- Consumer, Premium, VIP, Business 
+6) Target variable and its classes	Target Variable:- Customer Segment 
 
-7) Missing values / duplicates and how handled:-	Missing values found in 10 columns. Not in the target variable. For the selected feature columns imputed values. Checked for duplicated. None found. Code written to double check and drop duplicates if found. 
+7) Classes:- Consumer, Premium, VIP, Business 
 
-8) Preprocessing (scaling, encoding, etc.):- 	Data set is order level data with 138116. Number of Unique Customers: 24911. Performed Customer level aggregation. Aggregated customer data, Numerical transaction data and Customer behaviour and delivery experience and categorical purchase preferences. Dropped columns such as customer id’s, customer name, customer postal code etc. and other columns determined as having correlation such as customer type and customer lifetime value etc. to prevent leakage. Performed standard scaling and encoding to complete preprocessing. 
+8) Missing values / duplicates and how handled:-	Missing values found in 10 columns. Not in the target variable. For the selected feature columns imputed values. Checked for duplicated. None found. Code written to double check and drop duplicates if found. 
 
-9) Train / test split ratio, stratification and random seed:
+9) Preprocessing (scaling, encoding, etc.):- 	Data set is order level data with 138116. Number of Unique Customers: 24911. Performed Customer level aggregation. Aggregated customer data, Numerical transaction data and Customer behaviour and delivery experience and categorical purchase preferences. Dropped columns such as customer id’s, customer name, customer postal code etc. and other columns determined as having correlation such as customer type and customer lifetime value etc. to prevent leakage. Performed standard scaling and encoding to complete preprocessing. 
+
+10) Train / test split ratio, stratification and random seed:
 
     80: 20 Stratified split,
     Training Features: (19928, 120),
     Testing Features: (4983, 120),
     Random seed: 42
 
-10) Class distribution (full, train, test): 
+11) Class distribution (full, train, test): 
 
 Full Customer Segment Distribution:-
 
