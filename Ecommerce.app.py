@@ -28,34 +28,27 @@ st.write(
 
 
 # ============================================================
-# 2. FIND MODEL FILES AUTOMATICALLY
+# 2. FIND MODEL FILES IN REPOSITORY ROOT
 # ============================================================
+
+from pathlib import Path
 
 APP_DIR = Path(__file__).resolve().parent
 
-# Possible model folder locations
-possible_model_dirs = [
-    APP_DIR / "models",
-    APP_DIR.parent / "models",
-    Path.cwd() / "models",
-    Path.cwd() / "Ecommerce" / "models"
-]
+# app.py is inside Ecommerce/
+# Model files are in the repository root
+REPO_ROOT = APP_DIR.parent
 
-MODEL_PATH = None
-FEATURES_PATH = None
+MODEL_PATH = REPO_ROOT / "best_model.joblib"
+FEATURES_PATH = REPO_ROOT / "feature_columns.joblib"
 
-for folder in possible_model_dirs:
+if not MODEL_PATH.is_file():
+    st.error(f"Model file not found: {MODEL_PATH}")
+    st.stop()
 
-    model_file = folder / "best_model.joblib"
-    feature_file = folder / "feature_columns.joblib"
-
-    if model_file.is_file() and feature_file.is_file():
-
-        MODEL_PATH = model_file
-        FEATURES_PATH = feature_file
-
-        break
-
+if not FEATURES_PATH.is_file():
+    st.error(f"Feature columns file not found: {FEATURES_PATH}")
+    st.stop()
 
 # ============================================================
 # 3. LOAD TRAINED MODEL
@@ -65,30 +58,9 @@ for folder in possible_model_dirs:
 def load_model(model_path, features_path):
 
     model = joblib.load(model_path)
-
     feature_columns = joblib.load(features_path)
 
     return model, list(feature_columns)
-
-
-if MODEL_PATH is None or FEATURES_PATH is None:
-
-    st.error("Trained model files could not be located.")
-
-    st.write("Application directory:", str(APP_DIR))
-
-    st.write("Folders searched:")
-
-    for folder in possible_model_dirs:
-        st.write(str(folder))
-
-    st.info(
-        "Make sure best_model.joblib and "
-        "feature_columns.joblib are committed to GitHub "
-        "inside the same models folder."
-    )
-
-    st.stop()
 
 
 try:
@@ -102,12 +74,8 @@ try:
 
 except Exception as e:
 
-    st.error("Unable to load the trained model.")
-
-    st.exception(e)
-
+    st.error(f"Error loading model: {e}")
     st.stop()
-
 
 # ============================================================
 # 4. DISPLAY MODEL INFORMATION
