@@ -62,7 +62,7 @@ https://github.com/Sithara6386/ECommerce-Customer-Segmentation-Using-Machine-Lea
 
 d) Models used: Model Comparison Table
 
-	ML Model Name	Accuracy	AUC	Precision	Recall	F1 Weighted	MCC
+	  ML Model Name         Accuracy AUC Precision Recall F1 Weighted MCC
 	
       Support Vector Machine 0.6623	0.8083	0.5831	0.6623	0.6189	0.4213
       Decision Tree	         0.6129	0.7079	0.5785	0.6129	0.5927	0.3434
