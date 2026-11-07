@@ -12,9 +12,5 @@ scipy>=1.11
 joblib>=1.3
 
 # Jupyter environment (optional, for running notebooks)
-jupyterlab>=4.43
-ipykernel>=6.310
-Python>=3.12
-
-#deployment
-streamlit 
+jupyterlab>=4.0
+ipykernel>=6.29
