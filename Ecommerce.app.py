@@ -10,7 +10,6 @@ from sklearn.metrics import (
     precision_score,
     recall_score,
     f1_score,
-    balanced_accuracy_score,
     matthews_corrcoef,
     confusion_matrix,
     classification_report,
@@ -48,24 +47,60 @@ APP_DIR = Path(__file__).resolve().parent
 
 FEATURES_PATH = APP_DIR / "feature_columns.joblib"
 
-# Find saved model files in the repository root
+# Map saved filenames to readable model names.
+KNOWN_MODELS = {
+    "best_model.joblib": "Support Vector Machine (Linear SVM)",
+    "linear_svm_model.joblib": "Support Vector Machine (Linear SVM)",
+    "decision_tree_model.joblib": "Decision Tree",
+    "logistic_regression_model.joblib": "Logistic Regression",
+    "gaussian_naive_bayes_model.joblib": "Gaussian Naive Bayes",
+    "knn_model.joblib": "K-Nearest Neighbors (KNN)"
+}
+
 MODEL_FILES = {}
 
-# Include best_model.joblib
-best_model_path = APP_DIR / "best_model.joblib"
+# Prefer best_model.joblib for SVM if it exists.
+# Avoid loading the same SVM twice.
+if (APP_DIR / "best_model.joblib").is_file():
 
-if best_model_path.is_file():
-    MODEL_FILES["Best Model"] = best_model_path
+    MODEL_FILES["Support Vector Machine (Linear SVM)"] = (
+        APP_DIR / "best_model.joblib"
+    )
 
-# Include any additional saved models
-for path in APP_DIR.glob("*model*.joblib"):
+elif (APP_DIR / "linear_svm_model.joblib").is_file():
 
-    if path.name == "best_model.joblib":
+    MODEL_FILES["Support Vector Machine (Linear SVM)"] = (
+        APP_DIR / "linear_svm_model.joblib"
+    )
+
+
+# Load the other known model files.
+for filename, model_name in KNOWN_MODELS.items():
+
+    if model_name == "Support Vector Machine (Linear SVM)":
         continue
 
-    model_name = path.stem.replace("_model", "").replace("_", " ").title()
+    model_path = APP_DIR / filename
 
-    MODEL_FILES[model_name] = path
+    if model_path.is_file():
+        MODEL_FILES[model_name] = model_path
+
+
+# Discover additional model files, if any.
+for path in APP_DIR.glob("*model*.joblib"):
+
+    if path.name in KNOWN_MODELS:
+        continue
+
+    model_name = (
+        path.stem
+        .replace("_model", "")
+        .replace("_", " ")
+        .title()
+    )
+
+    if model_name not in MODEL_FILES:
+        MODEL_FILES[model_name] = path
 
 
 if not FEATURES_PATH.is_file():
@@ -79,7 +114,9 @@ if not FEATURES_PATH.is_file():
 
 if not MODEL_FILES:
 
-    st.error("No trained model files were found in the repository root.")
+    st.error(
+        "No trained model files were found in the repository root."
+    )
 
     st.stop()
 
@@ -92,14 +129,21 @@ if not MODEL_FILES:
 def load_artifacts(model_files, features_path):
 
     models = {}
+    loading_errors = {}
 
     for model_name, model_path in model_files:
 
-        models[model_name] = joblib.load(model_path)
+        try:
+
+            models[model_name] = joblib.load(model_path)
+
+        except Exception as e:
+
+            loading_errors[model_name] = str(e)
 
     feature_columns = joblib.load(features_path)
 
-    return models, list(feature_columns)
+    return models, list(feature_columns), loading_errors
 
 
 try:
@@ -109,20 +153,40 @@ try:
         for name, path in MODEL_FILES.items()
     )
 
-    models, feature_columns = load_artifacts(
+    models, feature_columns, loading_errors = load_artifacts(
         model_files_tuple,
         str(FEATURES_PATH)
     )
 
-    st.success(
-        f"{len(models)} trained model(s) loaded successfully."
-    )
-
 except Exception as e:
 
-    st.error(f"Error loading model: {e}")
+    st.error(f"Error loading model artifacts: {e}")
 
     st.stop()
+
+
+if not models:
+
+    st.error("None of the saved models could be loaded.")
+
+    for name, error in loading_errors.items():
+        st.write(f"**{name}:** {error}")
+
+    st.stop()
+
+
+st.success(
+    f"{len(models)} trained model(s) loaded successfully."
+)
+
+st.write("**Available models:**", ", ".join(models.keys()))
+
+if loading_errors:
+
+    with st.expander("Models that could not be loaded"):
+
+        for name, error in loading_errors.items():
+            st.warning(f"{name}: {error}")
 
 
 # ============================================================
@@ -156,6 +220,13 @@ except Exception as e:
     st.stop()
 
 
+if test_data.empty:
+
+    st.error("The uploaded test dataset is empty.")
+
+    st.stop()
+
+
 st.success("Test dataset uploaded successfully!")
 
 st.write("Dataset dimensions:", test_data.shape)
@@ -168,9 +239,8 @@ with st.expander("Preview Test Dataset"):
     )
 
 
-
 # ============================================================
-# 5. VALIDATE TEST DATA
+# 5. VALIDATE TEST DATASET
 # ============================================================
 
 st.divider()
@@ -179,95 +249,260 @@ st.header("2. Validate Test Dataset")
 
 TARGET = "customer_segment"
 
-# Check target column
+# Check target column.
 if TARGET not in test_data.columns:
+
     st.error(
         f"Target column '{TARGET}' is missing from the uploaded CSV."
     )
+
     st.stop()
 
-# Check required input features
+
+# Check required input features.
 missing_features = [
     col for col in feature_columns
     if col not in test_data.columns
 ]
 
 if missing_features:
+
     st.error("Required model features are missing.")
 
     st.write(missing_features)
+
     st.stop()
 
-# Extract actual target values
+
+# Extract actual target values.
 y_test = test_data[TARGET].copy()
 
-# Extract features in the exact training order
-# IMPORTANT: Preserve categorical and numerical data types.
+# Extract features in the exact training order.
+# Preserve original categorical and numerical data types.
 X_test = test_data[feature_columns].copy()
 
-# Check missing values without converting categorical data
+
+# Check missing feature values.
 missing_counts = X_test.isnull().sum()
+
 total_missing = int(missing_counts.sum())
 
 if total_missing > 0:
 
     st.warning(
         f"The test dataset contains {total_missing} missing feature values. "
-        "The saved model's preprocessing pipeline will attempt to handle them."
+        "The saved preprocessing pipeline will attempt to handle them."
     )
 
     st.write(
         missing_counts[missing_counts > 0]
     )
 
-# Check infinite values in numerical columns only
+
+# Check infinite values in numerical columns only.
 numeric_data = X_test.select_dtypes(include=np.number)
 
-if not np.isfinite(numeric_data.to_numpy(dtype=float)).all():
+if not np.isfinite(
+    numeric_data.to_numpy(dtype=float)
+).all():
 
-    st.error("Infinite values found in numerical input features.")
+    st.error(
+        "Infinite values found in numerical input features."
+    )
+
     st.stop()
 
-# Check target values
+
+# Check target values.
 if y_test.isnull().any():
 
     st.error("Missing values found in customer_segment.")
+
     st.stop()
 
-if len(test_data) == 0:
-
-    st.error("The uploaded test dataset is empty.")
-    st.stop()
 
 st.success("Test dataset validation completed successfully!")
+
 
 col1, col2, col3 = st.columns(3)
 
 col1.metric("Test Records", len(test_data))
+
 col2.metric("Input Features", len(feature_columns))
+
 col3.metric("Available Models", len(models))
 
-st.write("Input feature data types:")
 
-st.dataframe(
-    X_test.dtypes.astype(str).reset_index().rename(
-        columns={"index": "Feature", 0: "Data Type"}
-    ),
-    use_container_width=True
+with st.expander("View Input Feature Data Types"):
+
+    st.dataframe(
+        X_test.dtypes.astype(str)
+        .reset_index()
+        .rename(
+            columns={
+                "index": "Feature",
+                0: "Data Type"
+            }
+        ),
+        use_container_width=True
+    )
+
+
+# ============================================================
+# 6. MODEL SELECTION DROPDOWN
+# ============================================================
+
+st.divider()
+
+st.header("3. Select Classification Model")
+
+available_models = list(models.keys())
+
+selected_model_name = st.selectbox(
+    "Choose a model for detailed evaluation:",
+    available_models,
+    key="selected_model"
+)
+
+st.info(
+    f"Selected model: **{selected_model_name}**"
 )
 
 
 # ============================================================
-# 6. EVALUATION FUNCTION
+# 7. EVALUATION FUNCTION
 # ============================================================
+
+def calculate_auc(model, X, y):
+
+    """
+    Calculate weighted multiclass One-vs-Rest ROC-AUC.
+
+    Uses predict_proba() when available.
+    Uses decision_function() for models such as LinearSVC.
+    """
+
+    try:
+
+        # Obtain model classes.
+        classes = getattr(model, "classes_", None)
+
+        if classes is None and hasattr(model, "steps"):
+
+            classes = getattr(
+                model.steps[-1][1],
+                "classes_",
+                None
+            )
+
+        if classes is None:
+
+            classes = np.unique(y)
+
+        classes = np.asarray(classes)
+
+        # ----------------------------------------------------
+        # CASE 1: Models supporting predict_proba()
+        # ----------------------------------------------------
+
+        if hasattr(model, "predict_proba"):
+
+            y_score = model.predict_proba(X)
+
+            if y_score.shape[1] != len(classes):
+                return np.nan
+
+            auc = roc_auc_score(
+                y,
+                y_score,
+                labels=classes,
+                multi_class="ovr",
+                average="weighted"
+            )
+
+            return auc
+
+
+        # ----------------------------------------------------
+        # CASE 2: Models supporting decision_function()
+        # ----------------------------------------------------
+
+        elif hasattr(model, "decision_function"):
+
+            y_score = model.decision_function(X)
+
+            # Binary classification: decision_function returns
+            # a single score for the positive class.
+            if np.ndim(y_score) == 1:
+
+                return roc_auc_score(
+                    np.asarray(y) == classes[1],
+                    y_score
+                )
+
+
+            # Multiclass classification:
+            # Calculate One-vs-Rest AUC for each class.
+            class_auc = []
+            class_weights = []
+
+            for i, cls in enumerate(classes):
+
+                y_binary = (
+                    np.asarray(y) == cls
+                ).astype(int)
+
+                # Skip classes absent from the test dataset.
+                if len(np.unique(y_binary)) < 2:
+                    continue
+
+                auc_i = roc_auc_score(
+                    y_binary,
+                    y_score[:, i]
+                )
+
+                class_auc.append(auc_i)
+
+                class_weights.append(
+                    np.sum(y_binary)
+                )
+
+
+            if not class_auc:
+                return np.nan
+
+            return np.average(
+                class_auc,
+                weights=class_weights
+            )
+
+
+        else:
+
+            return np.nan
+
+
+    except Exception:
+
+        return np.nan
+
 
 def evaluate_model(model, X, y):
 
     predictions = model.predict(X)
 
+    auc = calculate_auc(
+        model,
+        X,
+        y
+    )
+
     results = {
 
-        "Accuracy": accuracy_score(y, predictions),
+        "Accuracy": accuracy_score(
+            y,
+            predictions
+        ),
 
         "Precision": precision_score(
             y,
@@ -290,71 +525,42 @@ def evaluate_model(model, X, y):
             zero_division=0
         ),
 
-        "F1 Macro": f1_score(
-            y,
-            predictions,
-            average="macro",
-            zero_division=0
-        ),
-
-        "Balanced Accuracy": balanced_accuracy_score(
-            y,
-            predictions
-        ),
-
         "MCC": matthews_corrcoef(
             y,
             predictions
-        )
+        ),
+
+        "AUC": auc
     }
-
-
-    # Multiclass ROC-AUC
-    try:
-
-        if hasattr(model, "predict_proba"):
-
-            y_score = model.predict_proba(X)
-
-            results["AUC"] = roc_auc_score(
-                y,
-                y_score,
-                labels=model.classes_,
-                multi_class="ovr",
-                average="weighted"
-            )
-
-        else:
-
-            results["AUC"] = np.nan
-
-    except Exception:
-
-        results["AUC"] = np.nan
-
 
     return predictions, results
 
 
 # ============================================================
-# 7. EVALUATE ALL SAVED MODELS
+# 8. EVALUATE ALL SAVED MODELS
 # ============================================================
 
 st.divider()
 
-st.header("3. Model Performance Comparison")
+st.header("4. Model Performance Comparison")
 
 if st.button(
-    "Evaluate All Models",
+    "Evaluate All Available Models",
     type="primary",
     use_container_width=True
 ):
 
     comparison_results = []
+
     predictions_by_model = {}
+
     errors = {}
 
-    for model_name, model in models.items():
+    progress_bar = st.progress(0)
+
+    total_models = len(models)
+
+    for index, (model_name, model) in enumerate(models.items()):
 
         try:
 
@@ -375,92 +581,141 @@ if st.button(
 
             errors[model_name] = str(e)
 
+        progress_bar.progress(
+            (index + 1) / total_models
+        )
+
 
     if comparison_results:
 
-        comparison_df = pd.DataFrame(comparison_results)
+        comparison_df = pd.DataFrame(
+            comparison_results
+        )
 
         st.session_state["comparison_df"] = comparison_df
 
-        st.session_state["predictions_by_model"] = predictions_by_model
+        st.session_state["predictions_by_model"] = (
+            predictions_by_model
+        )
 
         st.session_state["evaluation_errors"] = errors
 
-        st.success("Model evaluation completed!")
+        st.success("Model evaluation completed successfully!")
 
     else:
 
-        st.error("None of the saved models could be evaluated.")
+        st.error(
+            "None of the saved models could be evaluated."
+        )
 
         for name, error in errors.items():
 
-            st.write(name, error)
+            st.write(f"{name}: {error}")
 
 
 # ============================================================
-# 8. DISPLAY MODEL COMPARISON TABLE
+# 9. DISPLAY MODEL COMPARISON TABLE
 # ============================================================
 
 if "comparison_df" in st.session_state:
 
     comparison_df = st.session_state["comparison_df"]
 
-    st.subheader("Performance of Different Models")
+    st.subheader("Model Comparison Results")
+
+    # Display only the six requested metrics.
+    display_columns = [
+        "Model",
+        "Accuracy",
+        "Precision",
+        "Recall",
+        "F1 Weighted",
+        "MCC",
+        "AUC"
+    ]
+
+    comparison_display = comparison_df[
+        display_columns
+    ].copy()
 
     st.dataframe(
-        comparison_df.round(4),
+        comparison_display.round(4),
         use_container_width=True,
         hide_index=True
     )
 
 
-    # Best model based on weighted F1
+    # Best model based on Weighted F1.
     best_index = comparison_df["F1 Weighted"].idxmax()
 
     best_name = comparison_df.loc[
-        best_index, "Model"
+        best_index,
+        "Model"
     ]
 
     st.success(
-        f"Best model on uploaded test data based on Weighted F1: {best_name}"
+        f"Best model on uploaded test data based on Weighted F1: "
+        f"{best_name}"
     )
 
 
+    # Display model evaluation errors, if any.
     if st.session_state["evaluation_errors"]:
 
-        st.warning("Some models could not be evaluated.")
+        st.warning(
+            "Some models could not be evaluated."
+        )
 
-        for name, error in st.session_state["evaluation_errors"].items():
+        for name, error in st.session_state[
+            "evaluation_errors"
+        ].items():
 
-            st.write(f"{name}: {error}")
+            st.write(f"**{name}:** {error}")
 
 
     # ========================================================
-    # 9. MODEL SELECTION DROPDOWN
+    # 10. DETAILED MODEL EVALUATION
     # ========================================================
 
     st.divider()
 
-    st.header("4. Detailed Model Evaluation")
+    st.header("5. Detailed Model Evaluation")
 
-    available_models = list(
+    evaluated_models = list(
         st.session_state["predictions_by_model"].keys()
     )
 
+    # If the selected model failed evaluation, use the first
+    # successfully evaluated model.
+    if selected_model_name not in evaluated_models:
+
+        st.warning(
+            "The selected model could not be evaluated. "
+            "Displaying the first successfully evaluated model."
+        )
+
+        selected_model_name = evaluated_models[0]
+
+
+    # Use the same dropdown selection.
     selected_model_name = st.selectbox(
-        "Select a model to view detailed results:",
-        available_models
+        "Select model for detailed results:",
+        evaluated_models,
+        index=evaluated_models.index(selected_model_name),
+        key="detail_model"
     )
 
     selected_model = models[selected_model_name]
 
     selected_predictions = (
-        st.session_state["predictions_by_model"][selected_model_name]
+        st.session_state["predictions_by_model"][
+            selected_model_name
+        ]
     )
 
 
     # ========================================================
-    # 10. DISPLAY SELECTED MODEL METRICS
+    # 11. DISPLAY SELECTED MODEL METRICS
     # ========================================================
 
     selected_metrics = comparison_df[
@@ -468,9 +723,11 @@ if "comparison_df" in st.session_state:
     ].iloc[0]
 
 
-    st.subheader(f"{selected_model_name} - Evaluation Metrics")
+    st.subheader(
+        f"{selected_model_name} - Evaluation Metrics"
+    )
 
-    metric_cols = st.columns(4)
+    metric_cols = st.columns(3)
 
     metric_cols[0].metric(
         "Accuracy",
@@ -487,39 +744,31 @@ if "comparison_df" in st.session_state:
         f"{selected_metrics['Recall']:.4f}"
     )
 
-    metric_cols[3].metric(
+
+    metric_cols2 = st.columns(3)
+
+    metric_cols2[0].metric(
         "F1 Weighted",
         f"{selected_metrics['F1 Weighted']:.4f}"
     )
 
-
-    metric_cols2 = st.columns(4)
-
-    metric_cols2[0].metric(
-        "F1 Macro",
-        f"{selected_metrics['F1 Macro']:.4f}"
-    )
-
     metric_cols2[1].metric(
-        "Balanced Accuracy",
-        f"{selected_metrics['Balanced Accuracy']:.4f}"
-    )
-
-    metric_cols2[2].metric(
         "MCC",
         f"{selected_metrics['MCC']:.4f}"
     )
 
     auc_value = selected_metrics["AUC"]
 
-    metric_cols2[3].metric(
+    metric_cols2[2].metric(
         "ROC-AUC (Weighted OvR)",
-        f"{auc_value:.4f}" if pd.notna(auc_value) else "N/A"
+        f"{auc_value:.4f}"
+        if pd.notna(auc_value)
+        else "N/A"
     )
 
 
     # ========================================================
-    # 11. CONFUSION MATRIX
+    # 12. CONFUSION MATRIX
     # ========================================================
 
     st.divider()
@@ -540,8 +789,14 @@ if "comparison_df" in st.session_state:
 
     cm_df = pd.DataFrame(
         cm,
-        index=[f"Actual: {label}" for label in labels],
-        columns=[f"Predicted: {label}" for label in labels]
+        index=[
+            f"Actual: {label}"
+            for label in labels
+        ],
+        columns=[
+            f"Predicted: {label}"
+            for label in labels
+        ]
     )
 
     st.dataframe(
@@ -551,7 +806,7 @@ if "comparison_df" in st.session_state:
 
 
     # ========================================================
-    # 12. CLASSIFICATION REPORT
+    # 13. CLASSIFICATION REPORT
     # ========================================================
 
     st.divider()
@@ -566,7 +821,9 @@ if "comparison_df" in st.session_state:
         zero_division=0
     )
 
-    report_df = pd.DataFrame(report).transpose()
+    report_df = pd.DataFrame(
+        report
+    ).transpose()
 
     st.dataframe(
         report_df.round(4),
@@ -575,7 +832,7 @@ if "comparison_df" in st.session_state:
 
 
     # ========================================================
-    # 13. PREDICTION RESULTS
+    # 14. PREDICTION RESULTS
     # ========================================================
 
     st.divider()
@@ -584,7 +841,9 @@ if "comparison_df" in st.session_state:
 
     prediction_results = test_data.copy()
 
-    prediction_results["Predicted_Segment"] = selected_predictions
+    prediction_results["Predicted_Segment"] = (
+        selected_predictions
+    )
 
     prediction_results["Prediction_Correct"] = (
         prediction_results[TARGET]
@@ -598,7 +857,7 @@ if "comparison_df" in st.session_state:
 
 
     # ========================================================
-    # 14. DOWNLOAD RESULTS
+    # 15. DOWNLOAD RESULTS
     # ========================================================
 
     csv_output = prediction_results.to_csv(
@@ -615,7 +874,7 @@ if "comparison_df" in st.session_state:
 
 
 # ============================================================
-# 15. FOOTER
+# 16. FOOTER
 # ============================================================
 
 st.divider()
