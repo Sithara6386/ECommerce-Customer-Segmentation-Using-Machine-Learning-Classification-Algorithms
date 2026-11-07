@@ -28,47 +28,45 @@ st.write(
 
 
 # ============================================================
-# 2. FIND MODEL FILES IN REPOSITORY ROOT
+# 2. LOCATE MODEL FILES IN REPOSITORY ROOT
 # ============================================================
 
 from pathlib import Path
+import joblib
 
+# app.py and model files are in the same root directory
 APP_DIR = Path(__file__).resolve().parent
 
-# app.py is inside Ecommerce/
-# Model files are in the repository root
-REPO_ROOT = APP_DIR.parent
+MODEL_PATH = APP_DIR / "best_model.joblib"
+FEATURES_PATH = APP_DIR / "feature_columns.joblib"
 
-MODEL_PATH = REPO_ROOT / "best_model.joblib"
-FEATURES_PATH = REPO_ROOT / "feature_columns.joblib"
+if not MODEL_PATH.exists():
 
-if not MODEL_PATH.is_file():
     st.error(f"Model file not found: {MODEL_PATH}")
     st.stop()
 
-if not FEATURES_PATH.is_file():
+if not FEATURES_PATH.exists():
+
     st.error(f"Feature columns file not found: {FEATURES_PATH}")
     st.stop()
+
 
 # ============================================================
 # 3. LOAD TRAINED MODEL
 # ============================================================
 
 @st.cache_resource
-def load_model(model_path, features_path):
+def load_model():
 
-    model = joblib.load(model_path)
-    feature_columns = joblib.load(features_path)
+    model = joblib.load(MODEL_PATH)
+    feature_columns = joblib.load(FEATURES_PATH)
 
     return model, list(feature_columns)
 
 
 try:
 
-    model, feature_columns = load_model(
-        str(MODEL_PATH),
-        str(FEATURES_PATH)
-    )
+    model, feature_columns = load_model()
 
     st.success("Trained model loaded successfully!")
 
