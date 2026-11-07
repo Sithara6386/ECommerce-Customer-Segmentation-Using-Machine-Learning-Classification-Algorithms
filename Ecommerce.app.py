@@ -5,6 +5,18 @@ import joblib
 
 from pathlib import Path
 
+from sklearn.metrics import (
+    accuracy_score,
+    precision_score,
+    recall_score,
+    f1_score,
+    balanced_accuracy_score,
+    matthews_corrcoef,
+    confusion_matrix,
+    classification_report,
+    roc_auc_score
+)
+
 
 # ============================================================
 # 1. PAGE CONFIGURATION
@@ -16,266 +28,598 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("🛒 E-Commerce Customer Segmentation")
-st.markdown(
-    "### Predict customer segments using Machine Learning"
-)
+st.title("E-Commerce Customer Segmentation")
+st.subheader("Machine Learning Model Evaluation Dashboard")
 
-st.write(
-    "Upload a customer-level CSV file to predict whether "
-    "customers belong to the Consumer, Premium, VIP, or Business segment."
-)
+st.markdown("""
+Upload your **test dataset** containing the actual customer segment
+and the required model input features.
+
+The application evaluates previously trained models without
+retraining them.
+""")
 
 
 # ============================================================
-# 2. LOCATE MODEL FILES IN REPOSITORY ROOT
+# 2. LOCATE MODEL FILES
 # ============================================================
 
-from pathlib import Path
-import joblib
-
-# app.py and model files are in the same root directory
 APP_DIR = Path(__file__).resolve().parent
 
-MODEL_PATH = APP_DIR / "best_model.joblib"
 FEATURES_PATH = APP_DIR / "feature_columns.joblib"
 
-if not MODEL_PATH.exists():
+# Find saved model files in the repository root
+MODEL_FILES = {}
 
-    st.error(f"Model file not found: {MODEL_PATH}")
+# Include best_model.joblib
+best_model_path = APP_DIR / "best_model.joblib"
+
+if best_model_path.is_file():
+    MODEL_FILES["Best Model"] = best_model_path
+
+# Include any additional saved models
+for path in APP_DIR.glob("*model*.joblib"):
+
+    if path.name == "best_model.joblib":
+        continue
+
+    model_name = path.stem.replace("_model", "").replace("_", " ").title()
+
+    MODEL_FILES[model_name] = path
+
+
+if not FEATURES_PATH.is_file():
+
+    st.error(
+        f"Feature columns file not found: {FEATURES_PATH}"
+    )
+
     st.stop()
 
-if not FEATURES_PATH.exists():
 
-    st.error(f"Feature columns file not found: {FEATURES_PATH}")
+if not MODEL_FILES:
+
+    st.error("No trained model files were found in the repository root.")
+
     st.stop()
 
 
 # ============================================================
-# 3. LOAD TRAINED MODEL
+# 3. LOAD SAVED MODELS
 # ============================================================
 
 @st.cache_resource
-def load_model():
+def load_artifacts(model_files, features_path):
 
-    model = joblib.load(MODEL_PATH)
-    feature_columns = joblib.load(FEATURES_PATH)
+    models = {}
 
-    return model, list(feature_columns)
+    for model_name, model_path in model_files:
+
+        models[model_name] = joblib.load(model_path)
+
+    feature_columns = joblib.load(features_path)
+
+    return models, list(feature_columns)
 
 
 try:
 
-    model, feature_columns = load_model()
+    model_files_tuple = tuple(
+        (name, str(path))
+        for name, path in MODEL_FILES.items()
+    )
 
-    st.success("Trained model loaded successfully!")
+    models, feature_columns = load_artifacts(
+        model_files_tuple,
+        str(FEATURES_PATH)
+    )
+
+    st.success(
+        f"{len(models)} trained model(s) loaded successfully."
+    )
 
 except Exception as e:
 
     st.error(f"Error loading model: {e}")
+
     st.stop()
 
-# ============================================================
-# 4. DISPLAY MODEL INFORMATION
-# ============================================================
-
-with st.expander("View Model Information"):
-
-    st.write("Model:", type(model).__name__)
-
-    st.write("Number of required features:", len(feature_columns))
-
-    st.write("Model file:", str(MODEL_PATH))
-
-    st.write("Feature file:", str(FEATURES_PATH))
-
 
 # ============================================================
-# 5. UPLOAD CUSTOMER DATA
+# 4. TEST DATASET UPLOAD
 # ============================================================
 
 st.divider()
 
-st.subheader("Upload Customer Dataset")
+st.header("1. Upload Test Dataset")
 
 uploaded_file = st.file_uploader(
-    "Upload a CSV file",
+    "Upload your test CSV file",
     type=["csv"]
 )
 
-if uploaded_file is not None:
+if uploaded_file is None:
 
-    try:
+    st.info("Please upload your test CSV file to begin evaluation.")
 
-        data = pd.read_csv(uploaded_file)
-
-        st.success("CSV file uploaded successfully!")
-
-        st.subheader("Uploaded Data Preview")
-
-        st.dataframe(data.head(10), use_container_width=True)
-
-        st.write("Number of records:", len(data))
-
-        st.write("Number of columns:", len(data.columns))
+    st.stop()
 
 
-        # ====================================================
-        # 6. VALIDATE INPUT FEATURES
-        # ====================================================
+try:
 
-        missing_features = [
-            col for col in feature_columns
-            if col not in data.columns
-        ]
+    test_data = pd.read_csv(uploaded_file)
 
-        if missing_features:
+except Exception as e:
 
-            st.error(
-                "The uploaded dataset is missing required model features."
-            )
+    st.error(f"Unable to read uploaded CSV: {e}")
 
-            st.write("Missing features:")
-
-            st.write(missing_features)
-
-            st.warning(
-                "Upload a customer-level dataset containing the "
-                "same engineered and encoded features used during "
-                "model training."
-            )
-
-            st.stop()
+    st.stop()
 
 
-        # Select features in exactly the training order
-        X = data[feature_columns].copy()
+st.success("Test dataset uploaded successfully!")
 
+st.write("Dataset dimensions:", test_data.shape)
 
-        # ====================================================
-        # 7. DATA TYPE AND MISSING VALUE VALIDATION
-        # ====================================================
+with st.expander("Preview Test Dataset"):
 
-        X = X.apply(pd.to_numeric, errors="coerce")
-
-        if X.isnull().any().any():
-
-            st.error(
-                "Missing or non-numeric values were found "
-                "in the required model features."
-            )
-
-            missing_counts = X.isnull().sum()
-
-            st.write(
-                missing_counts[missing_counts > 0]
-            )
-
-            st.stop()
-
-
-        if not np.isfinite(X.to_numpy(dtype=float)).all():
-
-            st.error(
-                "Infinite values were found in the input data."
-            )
-
-            st.stop()
-
-
-        # ====================================================
-        # 8. PREDICTION
-        # ====================================================
-
-        st.divider()
-
-        st.subheader("Customer Segment Prediction")
-
-        if st.button(
-            "Predict Customer Segments",
-            type="primary",
-            use_container_width=True
-        ):
-
-            predictions = model.predict(X)
-
-            # Append predictions to original dataset
-            results = data.copy()
-
-            results["Predicted_Segment"] = predictions
-
-            st.success("Customer segmentation completed!")
-
-            # ================================================
-            # 9. DISPLAY PREDICTION RESULTS
-            # ================================================
-
-            st.subheader("Prediction Results")
-
-            st.dataframe(
-                results,
-                use_container_width=True
-            )
-
-
-            # ================================================
-            # 10. SEGMENT DISTRIBUTION
-            # ================================================
-
-            st.subheader("Customer Segment Distribution")
-
-            segment_counts = (
-                pd.Series(predictions)
-                .value_counts()
-                .sort_values(ascending=False)
-            )
-
-            col1, col2 = st.columns(2)
-
-            with col1:
-
-                st.metric(
-                    "Total Customers",
-                    len(predictions)
-                )
-
-            with col2:
-
-                st.metric(
-                    "Number of Segments Predicted",
-                    len(segment_counts)
-                )
-
-            st.bar_chart(segment_counts)
-
-
-            # ================================================
-            # 11. DOWNLOAD RESULTS
-            # ================================================
-
-            st.subheader("Download Predictions")
-
-            csv_data = results.to_csv(
-                index=False
-            ).encode("utf-8")
-
-            st.download_button(
-                label="Download Customer Predictions CSV",
-                data=csv_data,
-                file_name="customer_segmentation_predictions.csv",
-                mime="text/csv",
-                use_container_width=True
-            )
-
-    except Exception as e:
-
-        st.error("An error occurred while processing the uploaded file.")
-
-        st.exception(e)
+    st.dataframe(
+        test_data.head(10),
+        use_container_width=True
+    )
 
 
 # ============================================================
-# 12. FOOTER
+# 5. VALIDATE TEST DATA
+# ============================================================
+
+st.divider()
+
+st.header("2. Validate Test Dataset")
+
+TARGET = "customer_segment"
+
+if TARGET not in test_data.columns:
+
+    st.error(
+        f"Target column '{TARGET}' is missing from the uploaded CSV."
+    )
+
+    st.stop()
+
+
+missing_features = [
+    col for col in feature_columns
+    if col not in test_data.columns
+]
+
+if missing_features:
+
+    st.error("Some required model input features are missing.")
+
+    st.write(missing_features)
+
+    st.stop()
+
+
+# Extract actual target
+y_test = test_data[TARGET]
+
+
+# Extract features in exact training order
+X_test = test_data[feature_columns].copy()
+
+
+# Convert features to numeric
+X_test = X_test.apply(
+    pd.to_numeric,
+    errors="coerce"
+)
+
+
+# Check missing values
+if X_test.isnull().any().any():
+
+    st.error("Missing or non-numeric values found in input features.")
+
+    st.dataframe(
+        X_test.isnull().sum()[X_test.isnull().sum() > 0]
+    )
+
+    st.stop()
+
+
+# Check infinite values
+if not np.isfinite(X_test.to_numpy(dtype=float)).all():
+
+    st.error("Infinite values found in the test dataset.")
+
+    st.stop()
+
+
+if y_test.isnull().any():
+
+    st.error("Missing values found in the target column.")
+
+    st.stop()
+
+
+if len(test_data) == 0:
+
+    st.error("The uploaded test dataset is empty.")
+
+    st.stop()
+
+
+st.success("Test dataset validation completed.")
+
+col1, col2, col3 = st.columns(3)
+
+col1.metric("Test Records", len(test_data))
+
+col2.metric("Input Features", len(feature_columns))
+
+col3.metric("Available Models", len(models))
+
+
+# ============================================================
+# 6. EVALUATION FUNCTION
+# ============================================================
+
+def evaluate_model(model, X, y):
+
+    predictions = model.predict(X)
+
+    results = {
+
+        "Accuracy": accuracy_score(y, predictions),
+
+        "Precision": precision_score(
+            y,
+            predictions,
+            average="weighted",
+            zero_division=0
+        ),
+
+        "Recall": recall_score(
+            y,
+            predictions,
+            average="weighted",
+            zero_division=0
+        ),
+
+        "F1 Weighted": f1_score(
+            y,
+            predictions,
+            average="weighted",
+            zero_division=0
+        ),
+
+        "F1 Macro": f1_score(
+            y,
+            predictions,
+            average="macro",
+            zero_division=0
+        ),
+
+        "Balanced Accuracy": balanced_accuracy_score(
+            y,
+            predictions
+        ),
+
+        "MCC": matthews_corrcoef(
+            y,
+            predictions
+        )
+    }
+
+
+    # Multiclass ROC-AUC
+    try:
+
+        if hasattr(model, "predict_proba"):
+
+            y_score = model.predict_proba(X)
+
+            results["AUC"] = roc_auc_score(
+                y,
+                y_score,
+                labels=model.classes_,
+                multi_class="ovr",
+                average="weighted"
+            )
+
+        else:
+
+            results["AUC"] = np.nan
+
+    except Exception:
+
+        results["AUC"] = np.nan
+
+
+    return predictions, results
+
+
+# ============================================================
+# 7. EVALUATE ALL SAVED MODELS
+# ============================================================
+
+st.divider()
+
+st.header("3. Model Performance Comparison")
+
+if st.button(
+    "Evaluate All Models",
+    type="primary",
+    use_container_width=True
+):
+
+    comparison_results = []
+    predictions_by_model = {}
+    errors = {}
+
+    for model_name, model in models.items():
+
+        try:
+
+            predictions, metrics = evaluate_model(
+                model,
+                X_test,
+                y_test
+            )
+
+            predictions_by_model[model_name] = predictions
+
+            comparison_results.append({
+                "Model": model_name,
+                **metrics
+            })
+
+        except Exception as e:
+
+            errors[model_name] = str(e)
+
+
+    if comparison_results:
+
+        comparison_df = pd.DataFrame(comparison_results)
+
+        st.session_state["comparison_df"] = comparison_df
+
+        st.session_state["predictions_by_model"] = predictions_by_model
+
+        st.session_state["evaluation_errors"] = errors
+
+        st.success("Model evaluation completed!")
+
+    else:
+
+        st.error("None of the saved models could be evaluated.")
+
+        for name, error in errors.items():
+
+            st.write(name, error)
+
+
+# ============================================================
+# 8. DISPLAY MODEL COMPARISON TABLE
+# ============================================================
+
+if "comparison_df" in st.session_state:
+
+    comparison_df = st.session_state["comparison_df"]
+
+    st.subheader("Performance of Different Models")
+
+    st.dataframe(
+        comparison_df.round(4),
+        use_container_width=True,
+        hide_index=True
+    )
+
+
+    # Best model based on weighted F1
+    best_index = comparison_df["F1 Weighted"].idxmax()
+
+    best_name = comparison_df.loc[
+        best_index, "Model"
+    ]
+
+    st.success(
+        f"Best model on uploaded test data based on Weighted F1: {best_name}"
+    )
+
+
+    if st.session_state["evaluation_errors"]:
+
+        st.warning("Some models could not be evaluated.")
+
+        for name, error in st.session_state["evaluation_errors"].items():
+
+            st.write(f"{name}: {error}")
+
+
+    # ========================================================
+    # 9. MODEL SELECTION DROPDOWN
+    # ========================================================
+
+    st.divider()
+
+    st.header("4. Detailed Model Evaluation")
+
+    available_models = list(
+        st.session_state["predictions_by_model"].keys()
+    )
+
+    selected_model_name = st.selectbox(
+        "Select a model to view detailed results:",
+        available_models
+    )
+
+    selected_model = models[selected_model_name]
+
+    selected_predictions = (
+        st.session_state["predictions_by_model"][selected_model_name]
+    )
+
+
+    # ========================================================
+    # 10. DISPLAY SELECTED MODEL METRICS
+    # ========================================================
+
+    selected_metrics = comparison_df[
+        comparison_df["Model"] == selected_model_name
+    ].iloc[0]
+
+
+    st.subheader(f"{selected_model_name} - Evaluation Metrics")
+
+    metric_cols = st.columns(4)
+
+    metric_cols[0].metric(
+        "Accuracy",
+        f"{selected_metrics['Accuracy']:.4f}"
+    )
+
+    metric_cols[1].metric(
+        "Precision (Weighted)",
+        f"{selected_metrics['Precision']:.4f}"
+    )
+
+    metric_cols[2].metric(
+        "Recall (Weighted)",
+        f"{selected_metrics['Recall']:.4f}"
+    )
+
+    metric_cols[3].metric(
+        "F1 Weighted",
+        f"{selected_metrics['F1 Weighted']:.4f}"
+    )
+
+
+    metric_cols2 = st.columns(4)
+
+    metric_cols2[0].metric(
+        "F1 Macro",
+        f"{selected_metrics['F1 Macro']:.4f}"
+    )
+
+    metric_cols2[1].metric(
+        "Balanced Accuracy",
+        f"{selected_metrics['Balanced Accuracy']:.4f}"
+    )
+
+    metric_cols2[2].metric(
+        "MCC",
+        f"{selected_metrics['MCC']:.4f}"
+    )
+
+    auc_value = selected_metrics["AUC"]
+
+    metric_cols2[3].metric(
+        "ROC-AUC (Weighted OvR)",
+        f"{auc_value:.4f}" if pd.notna(auc_value) else "N/A"
+    )
+
+
+    # ========================================================
+    # 11. CONFUSION MATRIX
+    # ========================================================
+
+    st.divider()
+
+    st.subheader("Confusion Matrix")
+
+    labels = sorted(
+        set(y_test.unique()).union(
+            set(selected_predictions)
+        )
+    )
+
+    cm = confusion_matrix(
+        y_test,
+        selected_predictions,
+        labels=labels
+    )
+
+    cm_df = pd.DataFrame(
+        cm,
+        index=[f"Actual: {label}" for label in labels],
+        columns=[f"Predicted: {label}" for label in labels]
+    )
+
+    st.dataframe(
+        cm_df,
+        use_container_width=True
+    )
+
+
+    # ========================================================
+    # 12. CLASSIFICATION REPORT
+    # ========================================================
+
+    st.divider()
+
+    st.subheader("Classification Report")
+
+    report = classification_report(
+        y_test,
+        selected_predictions,
+        labels=labels,
+        output_dict=True,
+        zero_division=0
+    )
+
+    report_df = pd.DataFrame(report).transpose()
+
+    st.dataframe(
+        report_df.round(4),
+        use_container_width=True
+    )
+
+
+    # ========================================================
+    # 13. PREDICTION RESULTS
+    # ========================================================
+
+    st.divider()
+
+    st.subheader("Test Data Predictions")
+
+    prediction_results = test_data.copy()
+
+    prediction_results["Predicted_Segment"] = selected_predictions
+
+    prediction_results["Prediction_Correct"] = (
+        prediction_results[TARGET]
+        == prediction_results["Predicted_Segment"]
+    )
+
+    st.dataframe(
+        prediction_results.head(100),
+        use_container_width=True
+    )
+
+
+    # ========================================================
+    # 14. DOWNLOAD RESULTS
+    # ========================================================
+
+    csv_output = prediction_results.to_csv(
+        index=False
+    ).encode("utf-8")
+
+    st.download_button(
+        "Download Test Predictions CSV",
+        data=csv_output,
+        file_name="customer_segment_test_predictions.csv",
+        mime="text/csv",
+        use_container_width=True
+    )
+
+
+# ============================================================
+# 15. FOOTER
 # ============================================================
 
 st.divider()
