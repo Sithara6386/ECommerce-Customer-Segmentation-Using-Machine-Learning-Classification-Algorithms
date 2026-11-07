@@ -168,6 +168,7 @@ with st.expander("Preview Test Dataset"):
     )
 
 
+
 # ============================================================
 # 5. VALIDATE TEST DATA
 # ============================================================
@@ -178,87 +179,82 @@ st.header("2. Validate Test Dataset")
 
 TARGET = "customer_segment"
 
+# Check target column
 if TARGET not in test_data.columns:
-
     st.error(
         f"Target column '{TARGET}' is missing from the uploaded CSV."
     )
-
     st.stop()
 
-
+# Check required input features
 missing_features = [
     col for col in feature_columns
     if col not in test_data.columns
 ]
 
 if missing_features:
-
-    st.error("Some required model input features are missing.")
+    st.error("Required model features are missing.")
 
     st.write(missing_features)
-
     st.stop()
 
+# Extract actual target values
+y_test = test_data[TARGET].copy()
 
-# Extract actual target
-y_test = test_data[TARGET]
-
-
-# Extract features in exact training order
+# Extract features in the exact training order
+# IMPORTANT: Preserve categorical and numerical data types.
 X_test = test_data[feature_columns].copy()
 
+# Check missing values without converting categorical data
+missing_counts = X_test.isnull().sum()
+total_missing = int(missing_counts.sum())
 
-# Convert features to numeric
-X_test = X_test.apply(
-    pd.to_numeric,
-    errors="coerce"
-)
+if total_missing > 0:
 
-
-# Check missing values
-if X_test.isnull().any().any():
-
-    st.error("Missing or non-numeric values found in input features.")
-
-    st.dataframe(
-        X_test.isnull().sum()[X_test.isnull().sum() > 0]
+    st.warning(
+        f"The test dataset contains {total_missing} missing feature values. "
+        "The saved model's preprocessing pipeline will attempt to handle them."
     )
 
+    st.write(
+        missing_counts[missing_counts > 0]
+    )
+
+# Check infinite values in numerical columns only
+numeric_data = X_test.select_dtypes(include=np.number)
+
+if not np.isfinite(numeric_data.to_numpy(dtype=float)).all():
+
+    st.error("Infinite values found in numerical input features.")
     st.stop()
 
-
-# Check infinite values
-if not np.isfinite(X_test.to_numpy(dtype=float)).all():
-
-    st.error("Infinite values found in the test dataset.")
-
-    st.stop()
-
-
+# Check target values
 if y_test.isnull().any():
 
-    st.error("Missing values found in the target column.")
-
+    st.error("Missing values found in customer_segment.")
     st.stop()
-
 
 if len(test_data) == 0:
 
     st.error("The uploaded test dataset is empty.")
-
     st.stop()
 
-
-st.success("Test dataset validation completed.")
+st.success("Test dataset validation completed successfully!")
 
 col1, col2, col3 = st.columns(3)
 
 col1.metric("Test Records", len(test_data))
-
 col2.metric("Input Features", len(feature_columns))
-
 col3.metric("Available Models", len(models))
+
+st.write("Input feature data types:")
+
+st.dataframe(
+    X_test.dtypes.astype(str).reset_index().rename(
+        columns={"index": "Feature", 0: "Data Type"}
+    ),
+    use_container_width=True
+)
 
 
 # ============================================================
