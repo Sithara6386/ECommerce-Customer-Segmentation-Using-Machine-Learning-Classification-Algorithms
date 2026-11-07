@@ -624,15 +624,3 @@ st.caption(
     "E-Commerce Customer Segmentation | "
     "Machine Learning Classification Project"
 )
-
-
-
-import sklearn
-import numpy
-import scipy
-import joblib
-
-st.write("scikit-learn:", sklearn.__version__)
-st.write("NumPy:", numpy.__version__)
-st.write("SciPy:", scipy.__version__)
-st.write("Joblib:", joblib.__version__)
